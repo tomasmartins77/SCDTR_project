@@ -3,109 +3,91 @@
 const int LUMINAIRE = 1;
 
 // luminaire constants
-const int LED_PIN = 15;
-const int ADC_PIN = A0;
-const int DAC_RANGE = 4095;
-const float vcc = 3.3;
-const int sampInterval = 10; // 100hZ OR 0.01s
-const int conv = DAC_RANGE / vcc;
-const float m = -0.9;
-const float R = 10000;
-const float b = log10(300000) + 0.8;
+const int LED_PIN = 15;              // Pin that connects to the LED
+const int ADC_PIN = A0;              // Pin that connects to the LDR
+const int DAC_RANGE = 4095;          // Range of the DAC
+const float vcc = 3.3;               // Maximum voltage
+const int sampInterval = 10;         // 100hZ OR 0.01s
+const float m = -0.9;                // slope of the Lux-duty cycle curve
+const float R = 10000;               // resistance of the LDR circuit
+const float b = log10(300000) + 0.8; // intercept of the Lux-duty cycle curve
 
 // PID constants
 pid my_pid{0, 10, 100, 100}; // K, b, Ti, Tt, Td, N
-float r{1.0};
+float r{1.0};                // reference
 
 // luminaire variables
-float occupancy_person = 7;
-float occupancy_no_person = 1;
-float set_duty_cycle;
-float lux;
-int lux_counter;
-float lux_sum;
-float E;
-float V;
-float fk;
-float powerMax = 1;
-int counter;
-float gain;
-float duty_cycle_k1;
-float duty_cycle_k2;
+float occupancy_person = 7;    // occupancy reference luminance
+float occupancy_no_person = 1; // no occupancy reference luminance
+float dutyCycle_const;         // duty cycle for foward model
+float lux;                     // luminance
+int lux_counter;               // counter for the digital filter
+float lux_sum;                 // sum for the digital filter
+float E;                       // Energy
+float V;                       // Luminance error
+float fk;                      // Flicker
+float powerMax = 1;            // Maximum power
+int counter;                   // counter for the performance metrics
+float gain;                    // gain of the control system
+float dutyCycle_k1;            // duty cycle for the performance metrics
+float dutyCycle_k2;            // duty cycle for the performance metrics
 
-unsigned long previousTime = 0;
+unsigned long previousTime = 0; // will store last time LED was updated
 
 void setup()
-{ // the setup function runs once
+{
   Serial.begin(115200);
   analogReadResolution(12);    // default is 10
   analogWriteFreq(60000);      // 60KHz, about max
   analogWriteRange(DAC_RANGE); // 100% duty cycle
-  calibrate();
+  calibrate();                 // calibrate the gain
 }
 
 void calibrate()
 {
-  analogWrite(LED_PIN, 0);
+  analogWrite(LED_PIN, 0); // turn off the LED
   delay(2000);
 
-  float lux1 = calculate_adc_lux(analogRead(ADC_PIN));
+  float lux1 = calculateLux(analogRead(ADC_PIN)); // read the lux
 
-  analogWrite(LED_PIN, 2000);
+  analogWrite(LED_PIN, 2000); // turn on the LED at 48.84% duty cycle
   delay(2000);
 
-  float lux2 = calculate_adc_lux(analogRead(ADC_PIN));
+  float lux2 = calculateLux(analogRead(ADC_PIN)); // read the lux
 
-  gain = (lux2 - lux1) / (0.4884 - 0);
-  my_pid.setK(gain);
+  gain = (lux2 - lux1) / (0.4884 - 0); // calculate the gain
+  my_pid.setK(gain);                   // set the gain in the controller
 }
 
-void Read_from_Serial()
+void readSerial()
 {
   static String buffer;
 
-  while (Serial.available() > 0)
+  while (Serial.available() > 0) // read the serial port
   {
     char c = Serial.read();
-    if (c == '\n')
+    if (c == '\n') // end of line
     {
-      interface(buffer.c_str());
-      buffer = "";
+      interface(buffer.c_str()); // process the command
+      buffer = "";               // clear the buffer
     }
     else
     {
-      buffer += c;
+      buffer += c; // add the character to the buffer
     }
   }
 }
 
 void loop()
-{ // the loop function runs cyclically
-  int u;
+{
   unsigned long currentTime = millis();
 
   // Compute step and return if less than sampling period
   unsigned long h = (float)(currentTime - previousTime);
   if (h >= sampInterval)
   {
-    // Read from serial
-    Read_from_Serial();
-    // Digital filter
-    digitalFilter();
-    // Calculate lux average
-    lux = lux_sum / lux_counter;
     // Control system
-    if (my_pid.getFeedback())
-    {
-      u = (int)my_pid.compute_control(r, lux, h);
-      // write the value to the LED
-      analogWrite(LED_PIN, u);
-      my_pid.setDutyCycle((float)u / DAC_RANGE);
-    }
-    else
-    {
-      analogWrite(LED_PIN, set_duty_cycle * DAC_RANGE);
-    }
+    controllerToLED(h);
 
     // String dataString = "u: " + String(u) + ", r: " + String(r) + ", lux: " + String(lux) + ", lux_counter: " + String(lux_counter);
     //  Serial.println(dataString);
@@ -122,38 +104,68 @@ void loop()
     performanceMetrics(h);
 
     counter++;
-    previousTime = currentTime;
-    lux_counter = 0;
-    lux_sum = 0;
+    currentTime = resetVariables(currentTime);
   }
   else
   {
-    digitalFilter();
+    digitalFilter(); // store values bewteen samples for better accuracy
+  }
+}
+
+unsigned long resetVariables(unsigned long currentTime)
+{
+  previousTime = currentTime;
+  lux_counter = 0;
+  lux_sum = 0;
+  return currentTime;
+}
+
+void controllerToLED(unsigned long h)
+{
+  int u;
+
+  // Read from serial
+  readSerial();
+  // Digital filter
+  digitalFilter();
+  // Calculate lux average
+  lux = lux_sum / lux_counter;
+  // Control system
+  if (my_pid.getFeedback())
+  {
+    u = (int)my_pid.computeControl(r, lux, h);
+    // write the value to the LED
+    analogWrite(LED_PIN, u);
+    my_pid.setDutyCycle((float)u / DAC_RANGE);
+  }
+  else
+  {
+    analogWrite(LED_PIN, dutyCycle_const * DAC_RANGE);
   }
 }
 
 void performanceMetrics(unsigned long h)
 {
-  E += my_pid.getDutyCycle() * (h / 1000);
+  E += my_pid.getDutyCycle() * (h / 1000); // Energy (without considering the power factor)
 
-  V += max(0, r - lux);
+  V += max(0, r - lux); // Luminance error (no-mean value)
 
-  if (counter > 1)
+  if (counter > 1) // We need at least two samples to calculate the flicker
   {
-    if ((my_pid.getDutyCycle() - duty_cycle_k1) * (duty_cycle_k1 - duty_cycle_k2) < 0)
+    if ((my_pid.getDutyCycle() - dutyCycle_k1) * (dutyCycle_k1 - dutyCycle_k2) < 0)
     {
-      fk += abs(my_pid.getDutyCycle() - duty_cycle_k1) + abs(duty_cycle_k1 - duty_cycle_k2);
+      fk += abs(my_pid.getDutyCycle() - dutyCycle_k1) + abs(dutyCycle_k1 - dutyCycle_k2); // Flicker
     }
-    duty_cycle_k2 = duty_cycle_k1;
-    duty_cycle_k1 = my_pid.getDutyCycle();
+    dutyCycle_k2 = dutyCycle_k1;
+    dutyCycle_k1 = my_pid.getDutyCycle();
   }
   else if (counter == 1)
   {
-    duty_cycle_k1 = my_pid.getDutyCycle();
+    dutyCycle_k1 = my_pid.getDutyCycle();
   }
   else if (counter == 0)
   {
-    duty_cycle_k2 = my_pid.getDutyCycle();
+    dutyCycle_k2 = my_pid.getDutyCycle();
   }
 }
 
@@ -162,16 +174,16 @@ void digitalFilter()
   // read the value from the ADC
   int read_adc = analogRead(ADC_PIN);
   // transform the ADC into lux
-  float templux = calculate_adc_lux(read_adc);
+  float tempLux = calculateLux(read_adc);
   lux_counter++;
-  lux_sum += templux;
+  lux_sum += tempLux;
 }
 
-float calculate_adc_lux(float read_adc)
+float calculateLux(float read_adc)
 {
-  float voltage = float(read_adc) / conv;
-  float ldr = (vcc * R) / voltage - R;
-  return pow(10, (log10(ldr) - b) / m);
+  float voltage = float(read_adc) / (DAC_RANGE / vcc); // ADC to voltage
+  float ldr = (vcc * R) / voltage - R;                 // voltage to resistance
+  return pow(10, (log10(ldr) - b) / m);                // resistance to lux
 }
 
 void interface(const char *buffer)
@@ -188,8 +200,8 @@ void interface(const char *buffer)
     sscanf(buffer, "%c %d %f", &command, &luminaire, &value);
     if (LUMINAIRE == luminaire)
     {
-      set_duty_cycle = value;
-      analogWrite(LED_PIN, set_duty_cycle * DAC_RANGE); // duty cycle
+      dutyCycle_const = value;
+      analogWrite(LED_PIN, dutyCycle_const * DAC_RANGE); // duty cycle
       Serial.println("ack");
     }
     else
@@ -239,8 +251,8 @@ void interface(const char *buffer)
     sscanf(buffer, "%c %d %f", &command, &luminaire, &value);
     if (LUMINAIRE == luminaire)
     {
-      set_duty_cycle = my_pid.getDutyCycle();
-      r = calculate_adc_lux(my_pid.getDutyCycle() * DAC_RANGE);
+      dutyCycle_const = my_pid.getDutyCycle();
+      r = calculateLux(my_pid.getDutyCycle() * DAC_RANGE);
       my_pid.setFeedback(value); // feedback
       Serial.println("ack");
     }
@@ -274,7 +286,7 @@ void interface(const char *buffer)
         }
         else
         {
-          Serial.printf("d %d %f\n", luminaire, set_duty_cycle);
+          Serial.printf("d %d %f\n", luminaire, dutyCycle_const);
         }
         Serial.printf("d %d %f\n", luminaire, my_pid.getDutyCycle()); // duty cycle
       }

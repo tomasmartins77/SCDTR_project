@@ -4,16 +4,16 @@
 pid::pid(float _K, float b_, float Ti_, float Tt_, float Td_, float N_)
     : K{_K}, b{b_}, Ti{Ti_}, Td{Td_},
       N{N_}, I{0.0}, D{0.0}, y_old{0.0},
-      occupancy{0}, feedback{1}, anti_windup{1}, bumpless_transfer{1},
-      K_old{_K}, b_old{b_}, Tt{Tt_}, duty_cycle{0.0}
+      occupancy{0}, feedback{1}, antiWindup{1}, bumplessTransfer{1},
+      K_old{_K}, b_old{b_}, Tt{Tt_}, dutyCycle{0.0}
 {
+}
 
-} // should check arguments validity
-float pid::compute_control(float r, float y, float h)
+float pid::computeControl(float r, float y, float h)
 {
   float e = r - y;
 
-  if (bumpless_transfer)
+  if (bumplessTransfer)
   {
     I += K_old * (b_old * e) - K * (b * e);
     b_old = b;
@@ -33,7 +33,7 @@ float pid::compute_control(float r, float y, float h)
 
   float u = saturate(v, float(0), float(4095));
 
-  if (anti_windup)
+  if (antiWindup)
   {
     I += bi * e + ao * (u - v);
   }
@@ -72,12 +72,12 @@ void pid::setK(float newK)
 
 void pid::setAntiWindup(float value)
 {
-  anti_windup = value;
+  antiWindup = value;
 }
 
 float pid::getAntiWindup()
 {
-  return anti_windup;
+  return antiWindup;
 }
 
 void pid::setOccupancy(float value)
@@ -102,20 +102,20 @@ float pid::getFeedback()
 
 void pid::setDutyCycle(float value)
 {
-  duty_cycle = value;
+  dutyCycle = value;
 }
 
 float pid::getDutyCycle()
 {
-  return duty_cycle;
+  return dutyCycle;
 }
 
 void pid::setBumplessTransfer(float value)
 {
-  bumpless_transfer = value;
+  bumplessTransfer = value;
 }
 
 float pid::getBumplessTransfer()
 {
-  return bumpless_transfer;
+  return bumplessTransfer;
 }
