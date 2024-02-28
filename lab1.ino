@@ -26,13 +26,24 @@ float lux_sum;                 // sum for the digital filter
 float E;                       // Energy
 float V;                       // Luminance error
 float fk;                      // Flicker
-float powerMax = 1;            // Maximum power
+float powerMax = 0.254;        // Maximum power dissipated (0.108 of the LED and 0.146 of the resistor)
 int counter;                   // counter for the performance metrics
 float gain;                    // gain of the control system
 float dutyCycle_k1;            // duty cycle for the performance metrics
 float dutyCycle_k2;            // duty cycle for the performance metrics
+bool streamL = false;          // stream luminance
+bool streamD = false;          // stream duty cycle
 
 unsigned long previousTime = 0; // will store last time LED was updated
+
+struct DataPoint
+{ // Structure to store the data
+  float l;
+  float d;
+};
+const int bufferSize = 5;                 // Size of the buffer
+DataPoint last_minute_buffer[bufferSize]; // Buffer to store the data
+int head = 0;                             // Index of the first empty position in the buffer
 
 void setup()
 {
@@ -90,7 +101,7 @@ void loop()
     controllerToLED(h);
 
     // String dataString = "u: " + String(u) + ", r: " + String(r) + ", lux: " + String(lux) + ", lux_counter: " + String(lux_counter);
-    //  Serial.println(dataString);
+    // Serial.println(dataString);
 
     // Serial.print(lux);
     // Serial.print(" ");
@@ -98,10 +109,19 @@ void loop()
     // Serial.print(" ");
     // Serial.print(r);
     // Serial.print(" ");
-    // Serial.println(" 0 24 ");
+    // Serial.println(counter);
 
     // Performance metrics
     performanceMetrics(h);
+
+    if (streamL)
+    {
+      Serial.printf("s l %d %f %d\n", LUMINAIRE, lux, millis());
+    }
+    if (streamD)
+    {
+      Serial.printf("s d %d %f %d\n", LUMINAIRE, my_pid.getDutyCycle(), millis());
+    }
 
     counter++;
     currentTime = resetVariables(currentTime);
@@ -137,6 +157,7 @@ void controllerToLED(unsigned long h)
     // write the value to the LED
     analogWrite(LED_PIN, u);
     my_pid.setDutyCycle((float)u / DAC_RANGE);
+    addToBuffer(lux, my_pid.getDutyCycle());
   }
   else
   {
@@ -186,9 +207,16 @@ float calculateLux(float read_adc)
   return pow(10, (log10(ldr) - b) / m);                // resistance to lux
 }
 
+void addToBuffer(float value1, float value2)
+{
+  last_minute_buffer[head].l = value1;
+  last_minute_buffer[head].d = value2;
+  head = (head + 1) % bufferSize;
+}
+
 void interface(const char *buffer)
 {
-  char command, secondCommand;
+  char command, secondCommand, x;
   int luminaire;
   float value;
 
@@ -269,9 +297,59 @@ void interface(const char *buffer)
     else
       Serial.println("err");
     break;
-  case 'S':
-    break;
   case 's':
+    sscanf(buffer, "%c %c %d %f", &command, &secondCommand, &luminaire);
+    switch (secondCommand)
+    {
+    case 'l':
+      if (LUMINAIRE == luminaire)
+      {
+        streamL = !streamL;
+        Serial.println("ack");
+      }
+      else
+      {
+        Serial.println("err");
+      }
+      break;
+    case 'd':
+      if (LUMINAIRE == luminaire)
+      {
+        streamD = !streamD;
+        Serial.println("ack");
+      }
+      else
+      {
+        Serial.println("err");
+      }
+      break;
+    }
+    break;
+  case 'S':
+    sscanf(buffer, "%c %c %d %f", &command, &secondCommand, &luminaire);
+    switch (secondCommand)
+    {
+    case 'l':
+      if (LUMINAIRE == luminaire)
+      {
+        streamL = !streamL;
+      }
+      else
+      {
+        Serial.println("err");
+      }
+      break;
+    case 'd':
+      if (LUMINAIRE == luminaire)
+      {
+        streamD = !streamD;
+      }
+      else
+      {
+        Serial.println("err");
+      }
+      break;
+    }
     break;
   case 'g':
     sscanf(buffer, "%c %c %d", &command, &secondCommand, &luminaire); // get
@@ -376,9 +454,22 @@ void interface(const char *buffer)
       }
       break;
     case 'b':
+      sscanf(buffer, "%c %c %c %d", &command, &secondCommand, &x, &luminaire);
       if (LUMINAIRE == luminaire)
       {
-        // Serial.printf("a %d %f\n", luminaire, my_pid.getAntiWindup());
+        Serial.printf("b %c %i ", x, luminaire);
+        for (int i = 0; i < bufferSize; i++)
+        {
+          if (x == 'l')
+          {
+            Serial.printf("%f, ", last_minute_buffer[i].l);
+          }
+          else
+          {
+            Serial.printf("%f, ", last_minute_buffer[i].d);
+          }
+        }
+        Serial.println();
       }
       else
       {
