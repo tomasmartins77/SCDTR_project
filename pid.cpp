@@ -42,7 +42,7 @@ float pid::computeControl(float r, float y, float h)
     I += K * h / Ti * e;
   }
 
-  I = saturate(I, float(0), float(4095));
+  //I = saturate(I, float(0), float(4095));
 
   y_old = y;
 

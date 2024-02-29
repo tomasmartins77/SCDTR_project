@@ -8,12 +8,12 @@ const int ADC_PIN = A0;              // Pin that connects to the LDR
 const int DAC_RANGE = 4095;          // Range of the DAC
 const float vcc = 3.3;               // Maximum voltage
 const int sampInterval = 10;         // 100hZ OR 0.01s
-const float m = -0.9;                // slope of the Lux-duty cycle curve
+const float m = -0.8;                // slope of the Lux-duty cycle curve
 const float R = 10000;               // resistance of the LDR circuit
-const float b = log10(300000) + 0.8; // intercept of the Lux-duty cycle curve
+const float b = log10(225000) + 0.8; // intercept of the Lux-duty cycle curve
 
 // PID constants
-pid my_pid{0, 10, 100, 100}; // K, b, Ti, Tt, Td, N
+pid my_pid{15, 10, 28, 10}; // K, b, Ti, Tt, Td, N
 float r{1.0};                // reference
 
 // luminaire variables
@@ -56,18 +56,18 @@ void setup()
 
 void calibrate()
 {
+  delay(2000);
   analogWrite(LED_PIN, 0); // turn off the LED
   delay(2000);
 
   float lux1 = calculateLux(analogRead(ADC_PIN)); // read the lux
 
-  analogWrite(LED_PIN, 2000); // turn on the LED at 48.84% duty cycle
+  analogWrite(LED_PIN, DAC_RANGE); // turn on the LED at 100% duty cycle
   delay(2000);
 
   float lux2 = calculateLux(analogRead(ADC_PIN)); // read the lux
 
-  gain = (lux2 - lux1) / (0.4884 - 0); // calculate the gain
-  my_pid.setK(gain);                   // set the gain in the controller
+  gain = (lux2 - lux1) / (1 - 0); // calculate the gain
 }
 
 void readSerial()
@@ -100,16 +100,15 @@ void loop()
     // Control system
     controllerToLED(h);
 
-    // String dataString = "u: " + String(u) + ", r: " + String(r) + ", lux: " + String(lux) + ", lux_counter: " + String(lux_counter);
+    // String dataString = "r: " + String(r) + ", lux: " + String(lux);
     // Serial.println(dataString);
 
-    // Serial.print(lux);
-    // Serial.print(" ");
-    // Serial.print(lux - gain * my_pid.getDutyCycle()); // external luminance errado
-    // Serial.print(" ");
-    // Serial.print(r);
-    // Serial.print(" ");
-    // Serial.println(counter);
+    Serial.print(lux);
+    Serial.print(" ");
+    Serial.print(my_pid.getDutyCycle()); // external luminance
+    Serial.print(" ");
+    Serial.print(r);
+    Serial.println("0 19");
 
     // Performance metrics
     performanceMetrics(h);
