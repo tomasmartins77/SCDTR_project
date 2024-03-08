@@ -12,8 +12,7 @@ void interface(const char *buffer)
         sscanf(buffer, "%c %d %f", &command, &luminaire, &value);
         if (LUMINAIRE == luminaire)
         {
-            dutyCycle_const = value;
-            analogWrite(LED_PIN, dutyCycle_const * DAC_RANGE); // duty cycle
+            analogWrite(LED_PIN, value * DAC_RANGE); // duty cycle
             Serial.println("ack");
         }
         else
@@ -63,8 +62,6 @@ void interface(const char *buffer)
         sscanf(buffer, "%c %d %f", &command, &luminaire, &value);
         if (LUMINAIRE == luminaire)
         {
-            dutyCycle_const = my_pid.getDutyCycle();
-            r = calculateLux(my_pid.getDutyCycle() * DAC_RANGE);
             my_pid.setFeedback(value); // feedback
             Serial.println("ack");
         }
@@ -75,7 +72,27 @@ void interface(const char *buffer)
         sscanf(buffer, "%c %d %f", &command, &luminaire, &value);
         if (LUMINAIRE == luminaire)
         {
-            my_pid.setBumplessTransfer(value); // bumpless transfer
+            my_pid.setB(value);
+            Serial.println("ack");
+        }
+        else
+            Serial.println("err");
+        break;
+    case 'K':
+        sscanf(buffer, "%c %d %f", &command, &luminaire, &value);
+        if (LUMINAIRE == luminaire)
+        {
+            my_pid.setK(value);
+            Serial.println("ack");
+        }
+        else
+            Serial.println("err");
+        break;
+    case 'T':
+        sscanf(buffer, "%c %d %f", &command, &luminaire, &value);
+        if (LUMINAIRE == luminaire)
+        {
+            my_pid.setTi(value);
             Serial.println("ack");
         }
         else
@@ -134,6 +151,41 @@ void interface(const char *buffer)
             }
             break;
         }
+    case 'w':
+        sscanf(buffer, "%c %d %f", &command, &luminaire, &value);
+        if (LUMINAIRE == luminaire)
+        {
+            linear = (int)value; // linear
+            Serial.println("ack");
+        }
+        else
+        {
+            Serial.println("err");
+        }
+        break;
+    case 'v':
+        sscanf(buffer, "%c %d %f", &command, &luminaire, &value);
+        if (LUMINAIRE == luminaire)
+        {
+            visualize = (int)value; // gain
+            Serial.println("ack");
+        }
+        else
+        {
+            Serial.println("err");
+        }
+        break;
+    case 'z': // restart
+        sscanf(buffer, "%c %d", &command, &luminaire);
+        if (LUMINAIRE == luminaire)
+        {
+            Serial.println("ack");
+            time_now = micros();
+        }
+        else
+        {
+            Serial.println("err");
+        }
         break;
     case 'g':
         sscanf(buffer, "%c %c %d", &command, &secondCommand, &luminaire); // get
@@ -142,14 +194,6 @@ void interface(const char *buffer)
         case 'd':
             if (LUMINAIRE == luminaire)
             {
-                if (my_pid.getFeedback())
-                {
-                    Serial.printf("d %d %f\n", luminaire, my_pid.getDutyCycle()); // duty cycle
-                }
-                else
-                {
-                    Serial.printf("d %d %f\n", luminaire, dutyCycle_const);
-                }
                 Serial.printf("d %d %f\n", luminaire, my_pid.getDutyCycle()); // duty cycle
             }
             else
@@ -210,7 +254,7 @@ void interface(const char *buffer)
         case 'x':
             if (LUMINAIRE == luminaire)
             {
-                Serial.printf("x %d %lf\n", LUMINAIRE, lux - gain * my_pid.getDutyCycle()); // external luminance
+                Serial.printf("x %d %lf\n", LUMINAIRE, max(0, lux - gain * my_pid.getDutyCycle())); // external luminance
             }
             else
             {
@@ -284,6 +328,56 @@ void interface(const char *buffer)
             if (LUMINAIRE == luminaire)
             {
                 Serial.printf("f %d %f\n", luminaire, fk / counter);
+            }
+            else
+            {
+                Serial.println("err");
+            }
+            break;
+        case 'B':
+            if (LUMINAIRE == luminaire)
+            {
+                Serial.printf("B %d %f\n", luminaire, my_pid.getB());
+            }
+            else
+            {
+                Serial.println("err");
+            }
+            break;
+        case 'K':
+            if (LUMINAIRE == luminaire)
+            {
+                Serial.printf("K %d %f\n", luminaire, my_pid.getK());
+            }
+            else
+            {
+                Serial.println("err");
+            }
+            break;
+        case 'T':
+            if (LUMINAIRE == luminaire)
+            {
+                Serial.printf("Ti %d %f\n", luminaire, my_pid.getTi());
+            }
+            else
+            {
+                Serial.println("err");
+            }
+            break;
+        case 'u':
+            if (LUMINAIRE == luminaire)
+            {
+                Serial.printf("u %d %f\n", luminaire, tau);
+            }
+            else
+            {
+                Serial.println("err");
+            }
+            break;
+        case 'g':
+            if (LUMINAIRE == luminaire)
+            {
+                Serial.printf("g %d %f\n", luminaire, gain);
             }
             else
             {
