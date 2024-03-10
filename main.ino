@@ -14,15 +14,15 @@ const int sampInterval = 10;  // 100hZ OR 0.01s
 const float m = -0.9;         // slope of the Lux-duty cycle curve
 const float R = 10000;        // resistance of the LDR circuit
 const float C = 10e-6;
-const float b = log10(225000) + 0.8; // intercept of the Lux-duty cycle curve
+const float b = log10(225000) + 0.9; // intercept of the Lux-duty cycle curve
 
 // PID constants
-pid my_pid{5, 5, 0.0001, 0.1}; // K, b, Ti, Tt, Td, N  5, 15, 20, 5
-float r{1.0};                  // reference
+pid my_pid{1000, 0.1, 0.1, 0.1}; // K, b, Ti, Tt, Td, N
+float r{3.0};                    // reference
 
 // luminaire variables
-float occupancy_person = 7;    // occupancy reference luminance
-float occupancy_no_person = 1; // no occupancy reference luminance
+float occupancy_person = 10;   // occupancy reference luminance
+float occupancy_no_person = 3; // no occupancy reference luminance
 float volt;                    // voltage
 float E;                       // Energy
 float V;                       // Luminance error
@@ -30,12 +30,10 @@ float fk;                      // Flicker
 float powerMax = 0.1271;       // Maximum power dissipated (0.108 of the LED and 0.0191 of the resistor)
 int counter;                   // counter for the performance metrics
 float gain;                    // gain of the control system
-float tau;
-float dutyCycle_k1;             // duty cycle for the performance metrics
-float dutyCycle_k2;             // duty cycle for the performance metrics
-bool streamL = false;           // stream luminance
-bool streamD = false;           // stream duty cycle
-unsigned long previousTime = 0; // will store last time LED was updated
+float dutyCycle_k1;            // duty cycle for the performance metrics
+float dutyCycle_k2;            // duty cycle for the performance metrics
+bool streamL = false;          // stream luminance
+bool streamD = false;          // stream duty cycle
 int linear = 0;
 int visualize = 0;
 unsigned long time_now = 0;
@@ -52,6 +50,10 @@ const int bufferSize = 6000;              // Size of the buffer
 DataPoint last_minute_buffer[bufferSize]; // Buffer to store the data
 int head = 0;                             // Index of the first empty position in the buffer
 
+unsigned long int timer_time{0};
+volatile bool timer_fired{false};
+struct repeating_timer timer;
+
 MCP2515 can0{spi0, 17, 19, 16, 18, 10000000}; // channel spi0 or spi1
 uint8_t this_pico_flash_id[8], node_address;
 struct can_frame canMsgTx, canMsgRx;
@@ -62,6 +64,15 @@ unsigned long write_delay{1000};
 const byte interruptPin{20};
 volatile byte data_available{false};
 
+float test = 0;
+
+bool my_repeating_timer_callback(struct repeating_timer *t)
+{
+  if (!timer_fired)
+    timer_fired = true;
+  return true;
+}
+
 void read_interrupt(uint gpio, uint32_t events)
 {
   data_available = true;
@@ -70,12 +81,14 @@ void read_interrupt(uint gpio, uint32_t events)
 void setup()
 {
   flash_get_unique_id(this_pico_flash_id);
-  node_address = this_pico_flash_id[7];
+  node_address = this_pico_flash_id[6];
   Serial.begin(115200);
   analogReadResolution(12);    // default is 10
   analogWriteFreq(60000);      // 60KHz, about max
   analogWriteRange(DAC_RANGE); // 100% duty cycle
   calibrate();                 // calibrate the gain
+
+  add_repeating_timer_ms(-10, my_repeating_timer_callback, NULL, &timer); // 100 Hz
 
   can0.reset();
   can0.setBitrate(CAN_1000KBPS);
@@ -97,8 +110,9 @@ void calibrate()
 
   float volt2 = calculateVoltage(analogRead(ADC_PIN)); // read the lux
 
-  gain = (volt2 - volt1) / (1 - 0); // calculate the gain
+  gain = (volt2 - volt1) / (4095 - 0); // calculate the gain
   r = calculateLux2Voltage(r);      // set the reference
+  my_pid.setB(0.9*(1 / (gain * my_pid.getK())));
 }
 
 void readSerial()
@@ -138,12 +152,12 @@ void controllerToLED()
   // transform the ADC into lux
   float voltTemp = calculateVoltage(read_adc);
   volt = (sumVolt + voltTemp) / (countVolt + 1);
-  // float LDR = calculateLDR(read_adc);
-  // tau = (LDR * R) / (LDR + R) * C;
+  float LDR = calculateLDR(read_adc);
+
+  my_pid.setTi((LDR * R) / (LDR + R) * C);
 
   // Control system
   u = my_pid.computeControl(r, volt);
-  Serial.println(u);
   pwm = (int)u;
   // set the duty cycle
   my_pid.setDutyCycle(u / DAC_RANGE);
@@ -155,12 +169,11 @@ void controllerToLED()
 
 void controlLoop()
 {
-  unsigned long currentTime = millis();
-
-  // Compute step and return if less than sampling period
-  unsigned long h = (float)(currentTime - previousTime);
-  if (h >= sampInterval)
+  if (timer_fired)
   {
+
+    timer_time = micros();
+    timer_fired = false;
     // Read from serial
     readSerial();
 
@@ -170,8 +183,18 @@ void controlLoop()
     // Control system
     controllerToLED();
     // Performance metrics
-    performanceMetrics(h);
-
+    performanceMetrics();
+    if (test)
+    {
+      if ((int)((micros() - time_now) / 1000000.0) % 5 == 0 && (int)((micros() - time_now) / 1000000.0) % 10 != 0)
+      {
+        r = calculateLux2Voltage(30);
+      }
+      if ((int)((micros() - time_now) / 1000000.0) % 10 == 0)
+      {
+        r = calculateLux2Voltage(3);
+      }
+    }
     // String dataString = "r: " + String(r) + ", lux: " + String(lux);
     // Serial.println(dataString);
     if (visualize)
@@ -180,10 +203,12 @@ void controlLoop()
       Serial.print(" ");
       Serial.print(calculateVoltage2Lux(r));
       Serial.print(" ");
-      Serial.print(my_pid.getDutyCycle());
+      Serial.print(max(0, calculateVoltage2Lux(volt) - calculateVoltage2Lux(gain * my_pid.getDutyCycle() * 4095)));
       Serial.print(" ");
-      // Serial.println("0 25");
-      Serial.println(micros() - time_now);
+      Serial.print(my_pid.getDutyCycle()*100);
+      Serial.print(" ");
+      Serial.println("0 40");
+      //Serial.println((micros() - time_now) / 1000000.0);
     }
 
     if (streamL)
@@ -196,7 +221,6 @@ void controlLoop()
     }
 
     counter++;
-    previousTime = currentTime;
     sumVolt = 0;
     countVolt = 0;
   }
@@ -209,11 +233,11 @@ void controlLoop()
   }
 }
 
-void performanceMetrics(unsigned long h)
+void performanceMetrics()
 {
-  E += my_pid.getDutyCycle() * (h / 1000); // Energy (without considering the power factor)
+  E += my_pid.getDutyCycle() * ((float)0.1 / 1000); // Energy (without considering the power factor)
 
-  V += max(0, r - calculateVoltage2Lux(volt)); // Luminance error (no-mean value)
+  V += max(0, calculateVoltage2Lux(r) - calculateVoltage2Lux(volt)); // Luminance error (no-mean value)
 
   if (counter > 1) // We need at least two samples to calculate the flicker
   {

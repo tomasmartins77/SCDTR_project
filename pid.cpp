@@ -15,7 +15,7 @@ float pid::computeControl(float r, float y)
 
   uff = r * b * K;
   if (!feedback)
-    return uff;
+    return saturate(uff, float(0), float(4095));
 
   float e = r - y;
 
@@ -23,7 +23,7 @@ float pid::computeControl(float r, float y)
   b_old = b;
   K_old = K;
 
-  float P = K * (b * r - y);
+  float P = K * (-y);
 
   float bi = K * h / Ti;
   float ad = Td / (Td + N * h);
@@ -135,4 +135,14 @@ void pid::setDutyCycle(float value)
 float pid::getDutyCycle()
 {
   return dutyCycle;
+}
+
+void pid::setTt(float value)
+{
+  Tt = value;
+}
+
+float pid::getTt()
+{
+  return Tt;
 }

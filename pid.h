@@ -18,6 +18,8 @@ public:
     float getB();
     void setTi(float newB);
     float getTi();
+    void setTt(float newTt);
+    float getTt();
     void setAntiWindup(float value);
     float getAntiWindup();
     void setOccupancy(float value);

@@ -8,6 +8,20 @@ void interface(const char *buffer)
 
     switch (command)
     {
+    case 'u':
+        sscanf(buffer, "%c %d %f", &command, &luminaire, &value);
+        if (LUMINAIRE == luminaire && value >= 0 && value <= 1)
+        {
+            test = value; // test
+            time_now = micros();
+            r = calculateLux2Voltage(3);
+            Serial.println("ack");
+        }
+        else
+        {
+            Serial.println("err");
+        }
+        break;
     case 'd':
         sscanf(buffer, "%c %d %f", &command, &luminaire, &value);
         if (LUMINAIRE == luminaire && value >= 0 && value <= 1)
@@ -78,11 +92,11 @@ void interface(const char *buffer)
             my_pid.setOccupancy(value); // occupancy
             if (my_pid.getOccupancy())
             {
-                r = occupancy_person;
+                r = calculateLux2Voltage(occupancy_person);
             }
             else
             {
-                r = occupancy_no_person;
+                r = calculateLux2Voltage(occupancy_no_person);
             }
             Serial.println("ack");
         }
@@ -104,6 +118,7 @@ void interface(const char *buffer)
         if (LUMINAIRE == luminaire && value >= 0)
         {
             my_pid.setB(value);
+            my_pid.setK(1 / (gain * my_pid.getB()));
             Serial.println("ack");
         }
         else
@@ -114,6 +129,17 @@ void interface(const char *buffer)
         if (LUMINAIRE == luminaire && value >= 0)
         {
             my_pid.setK(value);
+            my_pid.setB(1 / (gain * my_pid.getK()));
+            Serial.println("ack");
+        }
+        else
+            Serial.println("err");
+        break;
+    case 'I':
+        sscanf(buffer, "%c %d %f", &command, &luminaire, &value);
+        if (LUMINAIRE == luminaire && value >= 0)
+        {
+            my_pid.setTi(value);
             Serial.println("ack");
         }
         else
@@ -123,7 +149,7 @@ void interface(const char *buffer)
         sscanf(buffer, "%c %d %f", &command, &luminaire, &value);
         if (LUMINAIRE == luminaire && value >= 0)
         {
-            my_pid.setTi(value);
+            my_pid.setTt(value);
             Serial.println("ack");
         }
         else
@@ -285,7 +311,7 @@ void interface(const char *buffer)
         case 'x':
             if (LUMINAIRE == luminaire)
             {
-                Serial.printf("x %d %lf\n", LUMINAIRE, max(0, calculateVoltage2Lux(volt) - gain * my_pid.getDutyCycle())); // external luminance
+                Serial.printf("x %d %lf\n", LUMINAIRE, max(0, calculateVoltage2Lux(volt) - calculateVoltage2Lux(gain * my_pid.getDutyCycle() * 4095))); // external luminance
             }
             else
             {
@@ -385,7 +411,7 @@ void interface(const char *buffer)
                 Serial.println("err");
             }
             break;
-        case 'T':
+        case 'I':
             if (LUMINAIRE == luminaire)
             {
                 Serial.printf("Ti %d %f\n", luminaire, my_pid.getTi());
@@ -395,10 +421,10 @@ void interface(const char *buffer)
                 Serial.println("err");
             }
             break;
-        case 'u':
+        case 'T':
             if (LUMINAIRE == luminaire)
             {
-                Serial.printf("u %d %f\n", luminaire, tau);
+                Serial.printf("Tt %d %f\n", luminaire, my_pid.getTt());
             }
             else
             {
