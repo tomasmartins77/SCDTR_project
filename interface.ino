@@ -14,7 +14,7 @@ void interface(const char *buffer)
         {
             test = value; // test
             time_now = micros();
-            r = calculateLux2Voltage(3);
+            r = functions.calculateLux2Voltage(3);
             Serial.println("ack");
         }
         else
@@ -69,7 +69,7 @@ void interface(const char *buffer)
         if (LUMINAIRE == luminaire && value >= 0)
         {
             dFunction = false;
-            r = calculateLux2Voltage(value); // reference
+            r = functions.calculateLux2Voltage(value); // reference
             Serial.println("ack");
         }
         else
@@ -92,11 +92,11 @@ void interface(const char *buffer)
             my_pid.setOccupancy(value); // occupancy
             if (my_pid.getOccupancy())
             {
-                r = calculateLux2Voltage(occupancy_person);
+                r = functions.calculateLux2Voltage(occupancy_person);
             }
             else
             {
-                r = calculateLux2Voltage(occupancy_no_person);
+                r = functions.calculateLux2Voltage(occupancy_no_person);
             }
             Serial.println("ack");
         }
@@ -244,6 +244,18 @@ void interface(const char *buffer)
             Serial.println("err");
         }
         break;
+    case 'R':
+        sscanf(buffer, "%c %d %f", &command, &luminaire, &value);
+        if (LUMINAIRE == luminaire && value >= 0)
+        {
+            my_pid.setBumplessTransfer(value);
+            Serial.println("ack");
+        }
+        else
+        {
+            Serial.println("err");
+        }
+        break;
     case 'g':
         sscanf(buffer, "%c %c %d", &command, &secondCommand, &luminaire); // get
         switch (secondCommand)
@@ -261,7 +273,7 @@ void interface(const char *buffer)
         case 'r':
             if (LUMINAIRE == luminaire)
             {
-                Serial.printf("r %d %f\n", luminaire, calculateVoltage2Lux(r)); // reference
+                Serial.printf("r %d %f\n", luminaire, functions.calculateVoltage2Lux(r)); // reference
             }
             else
             {
@@ -271,7 +283,7 @@ void interface(const char *buffer)
         case 'l':
             if (LUMINAIRE == luminaire)
             {
-                Serial.printf("l %d %f\n", luminaire, calculateVoltage2Lux(volt)); // lux
+                Serial.printf("l %d %f\n", luminaire, functions.calculateVoltage2Lux(volt)); // lux
             }
             else
             {
@@ -311,7 +323,7 @@ void interface(const char *buffer)
         case 'x':
             if (LUMINAIRE == luminaire)
             {
-                Serial.printf("x %d %lf\n", LUMINAIRE, max(0, calculateVoltage2Lux(volt) - calculateVoltage2Lux(gain * my_pid.getDutyCycle() * 4095))); // external luminance
+                Serial.printf("x %d %lf\n", LUMINAIRE, max(0, functions.calculateVoltage2Lux(volt) - functions.calculateVoltage2Lux(gain * my_pid.getDutyCycle() * 4095))); // external luminance
             }
             else
             {
@@ -343,15 +355,15 @@ void interface(const char *buffer)
             if (LUMINAIRE == luminaire)
             {
                 Serial.printf("b %c %i ", x, luminaire);
-                for (int i = 0; i < bufferSize; i++)
+                for (int i = 0; i < functions.getBufferSize(); i++)
                 {
                     if (x == 'l')
                     {
-                        Serial.printf("%f, ", last_minute_buffer[i].l);
+                        Serial.printf("%f, ", functions.last_minute_buffer[i].l);
                     }
                     else
                     {
-                        Serial.printf("%f, ", last_minute_buffer[i].d);
+                        Serial.printf("%f, ", functions.last_minute_buffer[i].d);
                     }
                 }
                 Serial.println();
@@ -441,6 +453,15 @@ void interface(const char *buffer)
                 Serial.println("err");
             }
             break;
+        case 'R':
+            if (LUMINAIRE == luminaire)
+            {
+                Serial.printf("Bumpless %d %f\n", luminaire, my_pid.getBumplessTransfer());
+            }
+            else
+            {
+                Serial.println("err");
+            }
         default:
             Serial.println("err");
             return;

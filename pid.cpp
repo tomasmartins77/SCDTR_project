@@ -4,7 +4,7 @@
 pid::pid(float _K, float b_, float Ti_, float Tt_, float Td_, float N_)
     : K{_K}, b{b_}, Ti{Ti_}, Td{Td_},
       N{N_}, I{0.0}, D{0.0}, y_old{0.0}, h{0.01},
-      occupancy{0}, feedback{1}, antiWindup{1},
+      occupancy{0}, feedback{1}, antiWindup{1}, bumpless{1},
       K_old{_K}, b_old{b_}, Tt{Tt_}, dutyCycle{0.0}
 {
 }
@@ -13,17 +13,21 @@ float pid::computeControl(float r, float y)
 {
   float uff, ufb, vfb, u, v;
 
-  uff = r * b * K;
+  uff = r * b * K; // feedforward control
   if (!feedback)
-    return saturate(uff, float(0), float(4095));
+    return saturate(uff, float(0), float(4095)); // no feedback control
 
-  float e = r - y;
+  float e = r - y; // error
 
-  I += K_old * (b_old * r - y) - K * (b * r - y);
+  if (bumpless) // bumpless transfer
+  {
+    I += K_old * (b_old * r - y) - K * (b * r - y);
+  }
+
   b_old = b;
   K_old = K;
 
-  float P = K * (-y);
+  float P = K * (-y); // proportional control
 
   float bi = K * h / Ti;
   float ad = Td / (Td + N * h);
@@ -32,19 +36,19 @@ float pid::computeControl(float r, float y)
 
   D = ad * D - bd * (y - y_old); // not useful for this project, Td = 0
 
-  ufb = P + I + D;
+  ufb = P + I + D; // feedback control
 
-  v = uff + ufb;
+  v = uff + ufb; // total control
 
-  u = saturate(v, float(0), float(4095));
+  u = saturate(v, float(0), float(4095)); // control signal
 
   if (antiWindup)
   {
-    I += bi * e + ao * (u - v);
+    I += bi * e + ao * (u - v); // integral control with anti-windup
   }
   else
   {
-    I += K * h / Ti * e;
+    I += K * h / Ti * e; // integral control
   }
   y_old = y;
 
@@ -145,4 +149,14 @@ void pid::setTt(float value)
 float pid::getTt()
 {
   return Tt;
+}
+
+void pid::setBumplessTransfer(float value)
+{
+  bumpless = value;
+}
+
+float pid::getBumplessTransfer()
+{
+  return bumpless;
 }

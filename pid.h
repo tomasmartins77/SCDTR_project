@@ -4,7 +4,7 @@
 class pid
 {
     float I, D, K, Ti, Td, Tt, b, y_old, b_old, K_old, N, dutyCycle, h;
-    int occupancy, antiWindup, feedback;
+    int occupancy, antiWindup, feedback, bumpless;
 
 public:
     explicit pid(float _K = 1, float b_ = 1,
