@@ -12,11 +12,9 @@ const int LUMINAIRE = 1;
 const int LED_PIN = 15;       // Pin that connects to the LED
 const int ADC_PIN = A0;       // Pin that connects to the LDR
 const float DAC_RANGE = 4095; // Range of the DAC
-const float vcc = 3.3;        // Maximum voltage
-const int sampInterval = 10;  // 100hZ OR 0.01s
 
 // PID constants
-pid my_pid{1000, 0.1, 0.1, 0.1}; // K, b, Ti, Tt, Td, N
+pid my_pid{1000}; // K
 functions functions;
 float r{3.0}; // reference
 
@@ -27,18 +25,15 @@ float volt;                    // voltage
 float E;                       // Energy
 float V;                       // Luminance error
 float fk;                      // Flicker
-float powerMax = 0.0162;       // Maximum power dissipated (0.29 V of resistor, I = V/R, P = Vled*I = 2.63*6.17*10^-3 = 0.0162 W)
 int counter = 1;               // counter for the performance metrics
 float gain;                    // gain of the control system
 float dutyCycle_k1;            // duty cycle for the performance metrics
 float dutyCycle_k2;            // duty cycle for the performance metrics
 bool streamL = false;          // stream luminance
 bool streamD = false;          // stream duty cycle
-unsigned long time_now = 0;    // time now timer restart
 bool dFunction = false;        // disable pid when changing duty cycle
 float sumVolt = 0;             // sum of the voltage
 int countVolt = 0;             // count of the voltage
-int visualize = 0;
 unsigned long previousTime = 0;
 
 volatile bool timer_fired{false};
@@ -54,8 +49,6 @@ unsigned long write_delay{1000};              // write delay
 const byte interruptPin{20};                  // interrupt pin
 volatile byte data_available{false};          // data available
 
-float test = 0;
-
 bool my_repeating_timer_callback(struct repeating_timer *t) // interrupt timer callback for pid
 {
   if (!timer_fired)
@@ -68,25 +61,50 @@ void read_interrupt(uint gpio, uint32_t events) // interrupt callback for can
   data_available = true;
 }
 
+// Function to initialize system settings and peripherals
 void setup()
 {
-  flash_get_unique_id(this_pico_flash_id); // get the flash id
-  node_address = this_pico_flash_id[6];    // node address
-  Serial.begin(115200);                    // start the serial port
-  analogReadResolution(12);                // default is 10
-  analogWriteFreq(60000);                  // 60KHz, about max
-  analogWriteRange(DAC_RANGE);             // 100% duty cycle
-  calibrate();                             // calibrate the gain
+  // Retrieve unique identifier of the microcontroller's flash memory
+  flash_get_unique_id(this_pico_flash_id);
 
-  add_repeating_timer_ms(-10, my_repeating_timer_callback, NULL, &timer); // 100 Hz
+  // Set node address using a specific byte of the flash memory ID
+  node_address = this_pico_flash_id[6];
+
+  // Start serial communication at baud rate 115200
+  Serial.begin(115200);
+
+  // Set analog-to-digital converter (ADC) resolution to 12 bits
+  analogReadResolution(12);
+
+  // Set frequency of the analog output (PWM) to 60 kHz
+  analogWriteFreq(60000);
+
+  // Set range of the analog output to match the DAC range constant
+  analogWriteRange(DAC_RANGE);
+
+  // Perform calibration to adjust system parameters
+  calibrate();
+
+  // Add repeating timer with a period of 10 milliseconds (-10 ms delay for immediate execution)
+  add_repeating_timer_ms(-10, my_repeating_timer_callback, NULL, &timer);
 }
 
+// Function to initialize CAN communication and related settings
 void setup1()
 {
+  // Reset CAN controller
   can0.reset();
+
+  // Set CAN bitrate to 1000 kbps
   can0.setBitrate(CAN_1000KBPS);
+
+  // Set CAN controller to normal mode
   can0.setNormalMode();
-  gpio_set_irq_enabled_with_callback(interruptPin, GPIO_IRQ_EDGE_FALL, true, &read_interrupt); // interrupt for can
+
+  // Enable interrupt for CAN communication on specified pin
+  gpio_set_irq_enabled_with_callback(interruptPin, GPIO_IRQ_EDGE_FALL, true, &read_interrupt);
+
+  // Set initial time to write CAN messages
   time_to_write = millis() + write_delay;
 }
 
@@ -96,212 +114,231 @@ void loop1()
   sendMessage();
 }
 
-void calibrate()
-{
-  delay(2000);
-  analogWrite(LED_PIN, 0); // turn off the LED
-  delay(2000);
-
-  float volt1 = functions.calculateVoltage(analogRead(ADC_PIN)); // read the lux
-
-  analogWrite(LED_PIN, DAC_RANGE); // turn on the LED at 100% duty cycle
-  delay(2000);
-
-  float volt2 = functions.calculateVoltage(analogRead(ADC_PIN)); // read the lux
-
-  gain = (volt2 - volt1) / (4095 - 0);   // calculate the gain
-  r = functions.calculateLux2Voltage(r); // set the reference
-  my_pid.setB(0.9 * (1 / (gain * my_pid.getK())));
-  analogWrite(LED_PIN, 0); // turn off the LED
-  delay(1000);
-}
-
 void loop()
 {
   controlLoop();
 }
 
+// Function to control the LED brightness based on the control system output
 void controllerToLED()
 {
-  int pwm;
-  float u;
+  int pwm; // Variable to store the PWM value
+  float u; // Variable to store the control signal
 
-  // read the value from the ADC
+  // Read the value from the analog-to-digital converter (ADC)
   int read_adc = analogRead(ADC_PIN);
 
-  // transform the ADC into lux
+  // Transform the ADC reading into voltage
   float voltTemp = functions.calculateVoltage(read_adc);
+
+  // Calculate the average voltage
   volt = (sumVolt + voltTemp) / (countVolt + 1);
+
+  // Calculate Light Dependent Resistor (LDR) value
   float LDR = functions.calculateLDR(read_adc);
 
+  // Set the integral time constant (Ti) of the PID controller based on LDR value
   my_pid.setTi(functions.calculateTau(LDR));
 
-  // Control system
+  // Compute the control signal using the PID controller
   u = my_pid.computeControl(r, volt);
+
+  // Convert the control signal to PWM value
   pwm = (int)u;
-  // set the duty cycle
+
+  // Set the duty cycle of the LED based on the control signal
   my_pid.setDutyCycle(u / DAC_RANGE);
-  // Add to the buffer
+
+  // Add the lux and duty cycle values to the buffer
   functions.addToBuffer(functions.calculateVoltage2Lux(volt), my_pid.getDutyCycle());
-  // write the value to the LED
+
+  // Write the PWM value to the LED
   analogWrite(LED_PIN, pwm);
 }
 
+// Function to control the loop execution based on timer firing
 void controlLoop()
 {
-  if (timer_fired)
+  if (timer_fired) // If the timer has fired
   {
-    timer_fired = false;
-    float timer = micros();
-    float interval = (timer - previousTime);
+    timer_fired = false;                     // Reset timer flag
+    float timer = micros();                  // Get current time
+    float interval = (timer - previousTime); // Calculate time interval
 
-    // Read from serial
+    // Read serial input
     readSerial();
 
+    // If duty cycle adjustment is disabled, return without further processing
     if (dFunction)
       return;
 
-    // Control system
+    // Execute control system
     controllerToLED();
-    // Performance metrics
+
+    // Calculate performance metrics
     performanceMetrics();
-    if (test)
+
+    // Stream luminance or duty cycle to serial monitor if enabled
+    if (streamL) // Stream luminance flag
     {
-      if ((int)((micros() - time_now) / 1000000.0) % 5 == 0 && (int)((micros() - time_now) / 1000000.0) % 10 != 0)
-      {
-        r = functions.calculateLux2Voltage(30);
-      }
-      if ((int)((micros() - time_now) / 1000000.0) % 10 == 0)
-      {
-        r = functions.calculateLux2Voltage(3);
-      }
+      Serial.printf("s l %d %.2f %.2f\n", LUMINAIRE, functions.calculateVoltage2Lux(volt), micros() / 1000000.0);
     }
-    // String dataString = "r: " + String(r) + ", lux: " + String(lux);
-    // Serial.println(dataString);
-    if (visualize)
+    if (streamD) // Stream duty cycle flag
     {
-      Serial.print(functions.calculateLux(analogRead(ADC_PIN)));
-      Serial.print(" ");
-      Serial.print(functions.calculateVoltage2Lux(r));
-      Serial.print(" ");
-      Serial.print(max(0, functions.calculateVoltage2Lux(volt) - functions.calculateVoltage2Lux(gain * my_pid.getDutyCycle() * 4095)));
-      Serial.print(" ");
-      Serial.print(my_pid.getDutyCycle());
-      Serial.print(" ");
-      Serial.print(abs(10000 - interval));
-      Serial.print(" ");
-      // Serial.println("0 40");
-      Serial.println((micros() - time_now) / 1000000.0);
+      Serial.printf("s d %d %.2f %.2f\n", LUMINAIRE, my_pid.getDutyCycle(), micros() / 1000000.0);
     }
 
-    if (streamL)
-    {
-      Serial.printf("s l %d %f %d\n", LUMINAIRE, functions.calculateVoltage2Lux(volt), millis());
-    }
-    if (streamD)
-    {
-      Serial.printf("s d %d %f %d\n", LUMINAIRE, my_pid.getDutyCycle(), millis());
-    }
+    // Reset variables for the next iteration
     counter++;
     sumVolt = 0;
     countVolt = 0;
-    previousTime = timer;
+    previousTime = timer; // Update previous time
   }
-  else
+  else // If the timer hasn't fired yet
   {
-    if (countVolt < 50)
+    if (countVolt < 50) // Perform voltage sampling to calculate the average
     {
-      int read_adc = analogRead(ADC_PIN);
-      float voltTemp = functions.calculateVoltage(read_adc);
-      sumVolt += voltTemp;
-      countVolt++;
+      int read_adc = analogRead(ADC_PIN);                    // Read ADC value
+      float voltTemp = functions.calculateVoltage(read_adc); // Calculate voltage
+      sumVolt += voltTemp;                                   // Accumulate voltage sum
+      countVolt++;                                           // Increment voltage count
     }
   }
 }
 
+// Function to calculate performance metrics
 void performanceMetrics()
 {
-  E += my_pid.getDutyCycle() * ((float)0.01); // Energy (without considering the power factor)
+  // Update energy by adding current duty cycle multiplied by the sampling interval
+  E += my_pid.getDutyCycle() * ((float)0.01);
 
-  V += max(0, functions.calculateVoltage2Lux(r) - functions.calculateVoltage2Lux(volt)); // Luminance error (no-mean value)
+  // Update luminance error by subtracting current lux value from reference lux value
+  V += max(0, functions.calculateVoltage2Lux(r) - functions.calculateVoltage2Lux(volt));
 
-  if (counter > 2) // We need at least two samples to calculate the flicker
+  // Calculate flicker if enough samples available (at least three)
+  if (counter > 2)
   {
+    // Check if the duty cycle changes direction (indicates flicker)
     if ((my_pid.getDutyCycle() - dutyCycle_k1) * (dutyCycle_k1 - dutyCycle_k2) < 0)
     {
-      fk += abs(my_pid.getDutyCycle() - dutyCycle_k1) + abs(dutyCycle_k1 - dutyCycle_k2); // Flicker
+      // Update flicker by adding absolute differences between current and previous duty cycles
+      fk += abs(my_pid.getDutyCycle() - dutyCycle_k1) + abs(dutyCycle_k1 - dutyCycle_k2);
     }
+    // Update duty cycle history
     dutyCycle_k2 = dutyCycle_k1;
     dutyCycle_k1 = my_pid.getDutyCycle();
   }
-  else if (counter == 2)
+  else if (counter == 2) // For the second sample, update duty cycle k1
   {
     dutyCycle_k1 = my_pid.getDutyCycle();
   }
-  else if (counter == 1)
+  else if (counter == 1) // For the first sample, update duty cycle k2
   {
     dutyCycle_k2 = my_pid.getDutyCycle();
   }
 }
 
+// Function to calibrate the system
+void calibrate()
+{
+  delay(2000);             // Wait for stabilization
+  analogWrite(LED_PIN, 0); // Turn off the LED
+  delay(2000);             // Wait for stabilization
+
+  // Read initial lux value
+  float volt1 = functions.calculateVoltage(analogRead(ADC_PIN));
+
+  analogWrite(LED_PIN, DAC_RANGE); // Turn on the LED at 100% duty cycle
+  delay(2000);                     // Wait for stabilization
+
+  // Read final lux value
+  float volt2 = functions.calculateVoltage(analogRead(ADC_PIN));
+
+  // Calculate the gain of the system
+  gain = (volt2 - volt1) / (4095 - 0);
+
+  // Set the reference lux value
+  r = functions.calculateLux2Voltage(r);
+
+  // Adjust the proportional term of the PID controller based on the system gain
+  my_pid.setB(0.9 * (1 / (gain * my_pid.getK())));
+
+  analogWrite(LED_PIN, 0); // Turn off the LED
+  delay(1000);             // Wait for stabilization
+}
+
+// Function to read and process serial input
 void readSerial()
 {
-  static String buffer;
+  static String buffer; // Static buffer to store incoming serial data
 
-  while (Serial.available() > 0) // read the serial port
+  // Continue reading while there is data available in the serial buffer
+  while (Serial.available() > 0)
   {
-    char c = Serial.read();
-    if (c == '\n') // end of line
+    char c = Serial.read(); // Read a character from the serial buffer
+
+    if (c == '\n') // If end of line is reached
     {
-      interface(buffer.c_str()); // process the command
-      buffer = "";               // clear the buffer
+      interface(buffer.c_str()); // Process the command stored in the buffer
+      buffer = "";               // Clear the buffer for the next command
     }
     else
     {
-      buffer += c; // add the character to the buffer
+      buffer += c; // Add the character to the buffer
     }
   }
 }
 
+// Function to send CAN message
 void sendMessage()
 {
+  // Check if it's time to send a message
   if (millis() >= time_to_write)
   {
+    // Set CAN message ID and data length
     canMsgTx.can_id = node_address;
     canMsgTx.can_dlc = 8;
+
+    // Prepare message data
     unsigned long div = counterTx * 10;
     for (int i = 0; i < 8; i++)
       canMsgTx.data[7 - i] = '0' + ((div /= 10) % 10);
+
+    // Send the message and handle errors
     err = can0.sendMessage(&canMsgTx);
-    if (err == MCP2515::ERROR_OK) // message sent
+    if (err == MCP2515::ERROR_OK) // Message sent successfully
     {
       Serial.print("Sending message ");
       Serial.print(counterTx);
       Serial.print(" from node ");
       Serial.println(node_address, HEX);
     }
-    else if (err == MCP2515::ERROR_FAILTX) // message failed
+    else if (err == MCP2515::ERROR_FAILTX) // Message transmission failed
     {
       Serial.print("Error sending message: ");
       Serial.println(err);
     }
-    else if (err == MCP2515::ERROR_ALLTXBUSY) // all tx busy
+    else if (err == MCP2515::ERROR_ALLTXBUSY) // All transmission buffers are busy
     {
       Serial.print("Error sending message, all tx busy: ");
       Serial.println(err);
     }
 
+    // Update counters and timing
     counterTx++;
     time_to_write = millis() + write_delay;
   }
 }
 
+// Function to receive CAN message
 void receiveMessage()
 {
+  // Check if data is available
   if (data_available)
   {
+    // Read the message and handle errors
     err = can0.readMessage(&canMsgRx);
-    if (err == MCP2515::ERROR_OK)
+    if (err == MCP2515::ERROR_OK) // Message received successfully
     {
       Serial.print("Received message number ");
       Serial.print(counterRx++);
@@ -312,11 +349,12 @@ void receiveMessage()
         Serial.print((char)canMsgRx.data[i]);
       Serial.println(" ");
     }
-    else if (err == MCP2515::ERROR_FAIL) // message failed
+    else if (err == MCP2515::ERROR_FAIL) // Message reception failed
     {
       Serial.println("Failed to receive message");
     }
 
+    // Reset data availability flag
     data_available = false;
   }
 }

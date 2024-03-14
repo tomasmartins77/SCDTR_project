@@ -1,11 +1,11 @@
 #include "pid.h"
 #include <iostream>
 
-pid::pid(float _K, float b_, float Ti_, float Tt_, float Td_, float N_)
-    : K{_K}, b{b_}, Ti{Ti_}, Td{Td_},
-      N{N_}, I{0.0}, D{0.0}, y_old{0.0}, h{0.01},
+pid::pid(float _K)
+    : K{_K}, b{0.1}, Ti{0.1}, Td{0},
+      N{10}, I{0.0}, D{0.0}, y_old{0.0}, h{0.01},
       occupancy{0}, feedback{1}, antiWindup{1}, bumpless{1},
-      K_old{_K}, b_old{b_}, Tt{Tt_}, dutyCycle{0.0}
+      K_old{_K}, b_old{0.1}, Tt{0.1}, dutyCycle{0.0}
 {
 }
 
@@ -15,9 +15,7 @@ float pid::computeControl(float r, float y)
 
   uff = r * b * K; // feedforward control
   if (!feedback)
-    return saturate(uff, float(0), float(4095)); // no feedback control
-
-  float e = r - y; // error
+    return saturate(uff, float(0), float(4095)); // feedforward control only
 
   if (bumpless) // bumpless transfer
   {
@@ -42,14 +40,15 @@ float pid::computeControl(float r, float y)
 
   u = saturate(v, float(0), float(4095)); // control signal
 
+  float e = r - y; // error
+
+  I += bi * e; // integral control
+
   if (antiWindup)
   {
-    I += bi * e + ao * (u - v); // integral control with anti-windup
+    I += ao * (u - v); // integral control with anti-windup
   }
-  else
-  {
-    I += K * h / Ti * e; // integral control
-  }
+
   y_old = y;
 
   return u;

@@ -7,8 +7,7 @@ class pid
     int occupancy, antiWindup, feedback, bumpless;
 
 public:
-    explicit pid(float _K = 1, float b_ = 1,
-                 float Ti_ = 1, float Tt_ = 1, float Td_ = 0, float N_ = 1);
+    explicit pid(float _K = 1000);
     ~pid(){};
     float computeControl(float r, float y);
     float saturate(float value, float min_val, float max_val);
