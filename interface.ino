@@ -36,34 +36,6 @@ void interface(const char *buffer)
             Serial.println("err");
         }
         break;
-    case 'p':
-        sscanf(buffer, "%c %d %f", &command, &luminaire, &value);
-        if (LUMINAIRE == luminaire && value >= 0 && value <= 100)
-        {
-            dFunction = true;
-            my_pid.setDutyCycle(value / 100); // duty cycle
-            analogWrite(LED_PIN, value / 100 * DAC_RANGE);
-            Serial.println("ack");
-        }
-        else
-        {
-            Serial.println("err");
-        }
-        break;
-    case 'w':
-        sscanf(buffer, "%c %d %f", &command, &luminaire, &value);
-        if (LUMINAIRE == luminaire && value >= 0 && value <= 4095)
-        {
-            dFunction = true;
-            my_pid.setDutyCycle(value / DAC_RANGE); // duty cycle
-            analogWrite(LED_PIN, value);
-            Serial.println("ack");
-        }
-        else
-        {
-            Serial.println("err");
-        }
-        break;
     case 'r':
         sscanf(buffer, "%c %d %f", &command, &luminaire, &value);
         if (LUMINAIRE == luminaire && value >= 0)
@@ -208,18 +180,6 @@ void interface(const char *buffer)
             }
             break;
         }
-    case 'q':
-        sscanf(buffer, "%c %d %f", &command, &luminaire, &value);
-        if (LUMINAIRE == luminaire)
-        {
-            linear = (int)value; // linear
-            Serial.println("ack");
-        }
-        else
-        {
-            Serial.println("err");
-        }
-        break;
     case 'v':
         sscanf(buffer, "%c %d %f", &command, &luminaire, &value);
         if (LUMINAIRE == luminaire && (value == 0 || value == 1))

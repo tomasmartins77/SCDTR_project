@@ -28,7 +28,7 @@ float E;                       // Energy
 float V;                       // Luminance error
 float fk;                      // Flicker
 float powerMax = 0.0162;       // Maximum power dissipated (0.29 V of resistor, I = V/R, P = Vled*I = 2.63*6.17*10^-3 = 0.0162 W)
-int counter;                   // counter for the performance metrics
+int counter = 1;               // counter for the performance metrics
 float gain;                    // gain of the control system
 float dutyCycle_k1;            // duty cycle for the performance metrics
 float dutyCycle_k2;            // duty cycle for the performance metrics
@@ -39,6 +39,7 @@ bool dFunction = false;        // disable pid when changing duty cycle
 float sumVolt = 0;             // sum of the voltage
 int countVolt = 0;             // count of the voltage
 int visualize = 0;
+unsigned long previousTime = 0;
 
 volatile bool timer_fired{false};
 struct repeating_timer timer;
@@ -91,26 +92,28 @@ void setup1()
 
 void loop1()
 {
-  // receiveMessage();
-  // sendMessage();
+  receiveMessage();
+  sendMessage();
 }
 
 void calibrate()
 {
   delay(2000);
   analogWrite(LED_PIN, 0); // turn off the LED
-  delay(3000);
+  delay(2000);
 
   float volt1 = functions.calculateVoltage(analogRead(ADC_PIN)); // read the lux
 
   analogWrite(LED_PIN, DAC_RANGE); // turn on the LED at 100% duty cycle
-  delay(3000);
+  delay(2000);
 
   float volt2 = functions.calculateVoltage(analogRead(ADC_PIN)); // read the lux
 
   gain = (volt2 - volt1) / (4095 - 0);   // calculate the gain
   r = functions.calculateLux2Voltage(r); // set the reference
   my_pid.setB(0.9 * (1 / (gain * my_pid.getK())));
+  analogWrite(LED_PIN, 0); // turn off the LED
+  delay(1000);
 }
 
 void loop()
@@ -149,6 +152,9 @@ void controlLoop()
   if (timer_fired)
   {
     timer_fired = false;
+    float timer = micros();
+    float interval = (timer - previousTime);
+
     // Read from serial
     readSerial();
 
@@ -182,6 +188,8 @@ void controlLoop()
       Serial.print(" ");
       Serial.print(my_pid.getDutyCycle());
       Serial.print(" ");
+      Serial.print(abs(10000 - interval));
+      Serial.print(" ");
       // Serial.println("0 40");
       Serial.println((micros() - time_now) / 1000000.0);
     }
@@ -194,27 +202,30 @@ void controlLoop()
     {
       Serial.printf("s d %d %f %d\n", LUMINAIRE, my_pid.getDutyCycle(), millis());
     }
-
     counter++;
     sumVolt = 0;
     countVolt = 0;
+    previousTime = timer;
   }
   else
   {
-    int read_adc = analogRead(ADC_PIN);
-    float voltTemp = functions.calculateVoltage(read_adc);
-    sumVolt += voltTemp;
-    countVolt++;
+    if (countVolt < 50)
+    {
+      int read_adc = analogRead(ADC_PIN);
+      float voltTemp = functions.calculateVoltage(read_adc);
+      sumVolt += voltTemp;
+      countVolt++;
+    }
   }
 }
 
 void performanceMetrics()
 {
-  E += my_pid.getDutyCycle() * ((float)0.01 / 1000); // Energy (without considering the power factor)
+  E += my_pid.getDutyCycle() * ((float)0.01); // Energy (without considering the power factor)
 
   V += max(0, functions.calculateVoltage2Lux(r) - functions.calculateVoltage2Lux(volt)); // Luminance error (no-mean value)
 
-  if (counter > 1) // We need at least two samples to calculate the flicker
+  if (counter > 2) // We need at least two samples to calculate the flicker
   {
     if ((my_pid.getDutyCycle() - dutyCycle_k1) * (dutyCycle_k1 - dutyCycle_k2) < 0)
     {
@@ -223,11 +234,11 @@ void performanceMetrics()
     dutyCycle_k2 = dutyCycle_k1;
     dutyCycle_k1 = my_pid.getDutyCycle();
   }
-  else if (counter == 1)
+  else if (counter == 2)
   {
     dutyCycle_k1 = my_pid.getDutyCycle();
   }
-  else if (counter == 0)
+  else if (counter == 1)
   {
     dutyCycle_k2 = my_pid.getDutyCycle();
   }
