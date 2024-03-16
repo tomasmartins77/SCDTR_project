@@ -14,8 +14,9 @@ float pid::computeControl(float r, float y)
   float uff, ufb, vfb, u, v;
 
   uff = r * b * K; // feedforward control
+  uff = saturate(uff, float(0), float(1));
   if (!feedback)
-    return saturate(uff, float(0), float(4095)); // feedforward control only
+    return uff; // feedforward control only
 
   if (bumpless) // bumpless transfer
   {
@@ -38,7 +39,7 @@ float pid::computeControl(float r, float y)
 
   v = uff + ufb; // total control
 
-  u = saturate(v, float(0), float(4095)); // control signal
+  u = saturate(v, float(0), float(1)); // control signal
 
   float e = r - y; // error
 

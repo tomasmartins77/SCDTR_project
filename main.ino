@@ -12,9 +12,11 @@ const int LUMINAIRE = 1;
 const int LED_PIN = 15;       // Pin that connects to the LED
 const int ADC_PIN = A0;       // Pin that connects to the LDR
 const float DAC_RANGE = 4095; // Range of the DAC
-
+int viz = 0;
+int test = 0;
+float time_now;
 // PID constants
-pid my_pid{1000}; // K
+pid my_pid{0.3}; // K
 functions functions;
 float r{3.0}; // reference
 
@@ -22,6 +24,7 @@ float r{3.0}; // reference
 float occupancy_person = 10;   // occupancy reference luminance
 float occupancy_no_person = 3; // no occupancy reference luminance
 float volt;                    // voltage
+float H;                       // conversion
 float E;                       // Energy
 float V;                       // Luminance error
 float fk;                      // Flicker
@@ -110,8 +113,8 @@ void setup1()
 
 void loop1()
 {
-  receiveMessage();
   sendMessage();
+  receiveMessage();
 }
 
 void loop()
@@ -134,15 +137,9 @@ void controllerToLED()
   // Calculate the average voltage
   volt = (sumVolt + voltTemp) / (countVolt + 1);
 
-  // Calculate Light Dependent Resistor (LDR) value
-  float LDR = functions.calculateLDR(read_adc);
-
-  // Set the integral time constant (Ti) of the PID controller based on LDR value
-  my_pid.setTi(functions.calculateTau(LDR));
-
   // Compute the control signal using the PID controller
   u = my_pid.computeControl(r, volt);
-
+  u *= DAC_RANGE;
   // Convert the control signal to PWM value
   pwm = (int)u;
 
@@ -187,6 +184,8 @@ void controlLoop()
     {
       Serial.printf("s d %d %.2f %.2f\n", LUMINAIRE, my_pid.getDutyCycle(), micros() / 1000000.0);
     }
+
+    // Serial.println(interval - 10000);
 
     // Reset variables for the next iteration
     counter++;
@@ -246,25 +245,31 @@ void calibrate()
   delay(2000);             // Wait for stabilization
 
   // Read initial lux value
-  float volt1 = functions.calculateVoltage(analogRead(ADC_PIN));
+  float lux1 = functions.calculateLux(analogRead(ADC_PIN));
 
   analogWrite(LED_PIN, DAC_RANGE); // Turn on the LED at 100% duty cycle
   delay(2000);                     // Wait for stabilization
 
   // Read final lux value
-  float volt2 = functions.calculateVoltage(analogRead(ADC_PIN));
+  float lux2 = functions.calculateLux(analogRead(ADC_PIN));
 
   // Calculate the gain of the system
-  gain = (volt2 - volt1) / (4095 - 0);
+  gain = (lux2 - lux1) / (1 - 0);
 
+  analogWrite(LED_PIN, functions.calculateLux2adc(r)); // Turn off the LED
+
+  lux1 = r;
   // Set the reference lux value
   r = functions.calculateLux2Voltage(r);
 
+  H = r / lux1;
   // Adjust the proportional term of the PID controller based on the system gain
-  my_pid.setB(0.9 * (1 / (gain * my_pid.getK())));
+  my_pid.setB(1 / (H * gain * my_pid.getK()));
+  float LDR = functions.calculateLux2LDR(lux1);
+  // Set the integral time constant (Ti) of the PID controller based on LDR value
+  my_pid.setTi(functions.calculateTau(LDR));
 
-  analogWrite(LED_PIN, 0); // Turn off the LED
-  delay(1000);             // Wait for stabilization
+  delay(1000); // Wait for stabilization
 }
 
 // Function to read and process serial input

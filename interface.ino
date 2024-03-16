@@ -28,6 +28,12 @@ void interface(const char *buffer)
         {
             dFunction = false;                         // unblocks controller
             r = functions.calculateLux2Voltage(value); // reference to volts
+            H = r / value;                             // volt/lux
+            // Calculate Light Dependent Resistor (LDR) value
+            float LDR = functions.calculateLux2LDR(value);
+            // Set the integral time constant (Ti) of the PID controller based on LDR value
+            my_pid.setTi(functions.calculateTau(LDR));
+            my_pid.setB(1 / (H * gain * my_pid.getK()));
             Serial.println("ack");
         }
         else
@@ -51,10 +57,22 @@ void interface(const char *buffer)
             if (my_pid.getOccupancy())
             {
                 r = functions.calculateLux2Voltage(occupancy_person); // set reference to occupancy
+                H = r / occupancy_person;
+                // Calculate Light Dependent Resistor (LDR) value
+                float LDR = functions.calculateLux2LDR(value);
+                // Set the integral time constant (Ti) of the PID controller based on LDR value
+                my_pid.setTi(functions.calculateTau(LDR));
+                my_pid.setB(1 / (H * gain * my_pid.getK()));
             }
             else
             {
                 r = functions.calculateLux2Voltage(occupancy_no_person); // set reference to no occupancy
+                H = r / occupancy_no_person;
+                // Calculate Light Dependent Resistor (LDR) value
+                float LDR = functions.calculateLux2LDR(value);
+                // Set the integral time constant (Ti) of the PID controller based on LDR value
+                my_pid.setTi(functions.calculateTau(LDR));
+                my_pid.setB(1 / (H * gain * my_pid.getK()));
             }
             Serial.println("ack");
         }
@@ -76,7 +94,7 @@ void interface(const char *buffer)
         if (LUMINAIRE == luminaire && value >= 0)
         {
             my_pid.setB(value);
-            my_pid.setK(0.9 * (1 / (gain * my_pid.getB())));
+            my_pid.setK(1 / (H * gain * my_pid.getB()));
             Serial.println("ack");
         }
         else
@@ -87,7 +105,7 @@ void interface(const char *buffer)
         if (LUMINAIRE == luminaire && value >= 0)
         {
             my_pid.setK(value);
-            my_pid.setB(0.9 * (1 / (gain * my_pid.getK())));
+            my_pid.setB(1 / (H * gain * my_pid.getK()));
             Serial.println("ack");
         }
         else
@@ -245,7 +263,7 @@ void interface(const char *buffer)
         case 'x': // get the external luminance value for the luminaire i
             if (LUMINAIRE == luminaire)
             {
-                Serial.printf("x %d %lf\n", LUMINAIRE, max(0, functions.calculateVoltage2Lux(volt) - functions.calculateVoltage2Lux(gain * my_pid.getDutyCycle() * 4095))); // external luminance
+                Serial.printf("x %d %lf\n", LUMINAIRE, abs(functions.calculateVoltage2Lux(volt) - gain * my_pid.getDutyCycle())); // external luminance
             }
             else
             {
@@ -255,6 +273,7 @@ void interface(const char *buffer)
         case 'p': // get the instantaneous power value for the luminaire i
             if (LUMINAIRE == luminaire)
             {
+                float powerMax = 0.0162;                                                 // Maximum power dissipated (0.29 V of resistor, I = V/R, P = Vled*I = 2.63*6.17*10^-3 = 0.0162 W)
                 Serial.printf("p %d %f\n", luminaire, my_pid.getDutyCycle() * powerMax); // power
             }
             else
@@ -298,8 +317,8 @@ void interface(const char *buffer)
         case 'e': // get the energy value for the luminaire i
             if (LUMINAIRE == luminaire)
             {
-                float powerMax = 0.0162; // Maximum power dissipated (0.29 V of resistor, I = V/R, P = Vled*I = 2.63*6.17*10^-3 = 0.0162 W)
-                Serial.printf("e %d %f\n", luminaire, E * powerMax);
+                float powerMax = 0.0162;                                                        // Maximum power dissipated (0.29 V of resistor, I = V/R, P = Vled*I = 2.63*6.17*10^-3 = 0.0162 W)
+                Serial.printf("e %d %f\n", luminaire, E * powerMax / (float)counter * 1000000); // mu J
             }
             else
             {
@@ -369,7 +388,7 @@ void interface(const char *buffer)
         case 'g': // get the gain value for the luminaire i
             if (LUMINAIRE == luminaire)
             {
-                Serial.printf("g %d %f\n", luminaire, gain * 4095);
+                Serial.printf("g %d %f\n", luminaire, gain);
             }
             else
             {

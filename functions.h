@@ -7,6 +7,8 @@ class functions
 public:
     functions();
     float calculateLux2Voltage(float lux);
+    float calculateLux2LDR(float lux);
+    float calculateLux2adc(float lux);
     float calculateVoltage2Lux(float voltage);
     float calculateVoltage(float read_adc);
     float calculateLDR(float read_adc);

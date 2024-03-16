@@ -8,8 +8,17 @@ functions::functions()
 
 float functions::calculateLux2Voltage(float lux) // calculate lux to voltage
 {
-    float resistance = pow(10, (log10(lux) * m + b));
+    float resistance = calculateLux2LDR(lux);
     return vcc * R / (resistance + R);
+}
+
+float functions::calculateLux2LDR(float lux) {
+    return pow(10, (log10(lux) * m + b));
+}
+
+float functions::calculateLux2adc(float lux) {
+    float voltage = calculateLux2Voltage(lux);
+    return voltage * DAC_RANGE / vcc;
 }
 
 float functions::calculateVoltage2Lux(float voltage) // calculate voltage to lux
@@ -20,7 +29,7 @@ float functions::calculateVoltage2Lux(float voltage) // calculate voltage to lux
 
 float functions::calculateVoltage(float read_adc)
 {
-    return read_adc / (DAC_RANGE / vcc); // ADC to voltage
+    return read_adc * vcc / DAC_RANGE; // ADC to voltage
 }
 
 float functions::calculateLDR(float read_adc) // Calculate the resistance of the LDR from adc
