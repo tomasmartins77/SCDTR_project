@@ -48,7 +48,7 @@ struct can_frame canMsgTx, canMsgRx;          // can frames
 unsigned long counterTx{0}, counterRx{0};     // counters
 MCP2515::ERROR err;                           // error
 unsigned long time_to_write;                  // time to write
-unsigned long write_delay{1000};              // write delay
+unsigned long write_delay{15};               // write delay
 const byte interruptPin{20};                  // interrupt pin
 volatile byte data_available{false};          // data available
 
